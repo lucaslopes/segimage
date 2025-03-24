@@ -1,1 +1,2 @@
 from .graph_image import save_graph_as_image
+from .img_segment import save_segmented_image
