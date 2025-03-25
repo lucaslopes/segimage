@@ -1,3 +1,4 @@
+import numpy as np
 import segimage
 
 
@@ -8,7 +9,11 @@ def main():
     img, segments, graph = segimage.img2graph(f'images/original/{image_path}')
     partition = graph.community_hedonic_queue()
     segimage.save_graph_as_image(graph, graph_path, partition)
-    segimage.save_segmented_image(partition, segments, img, segimage_path)
+    resolutions = np.linspace(0.01, 1, 11)
+    for res in resolutions:
+        partition = graph.community_hedonic_queue(resolution=res)
+        res_path = segimage_path.replace('.jpg', f'_{res:.2f}.png')
+        segimage.save_segmented_image(partition, segments, img, res_path)
     return True
 
 
