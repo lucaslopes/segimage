@@ -31,6 +31,7 @@ def available_processors() -> Dict[str, ProcessorFunc]:
 # Import built-in processors to ensure they are registered on package import
 from . import color_cluster  # noqa: E402,F401
 from . import lbp  # noqa: E402,F401
+from . import graph  # noqa: E402,F401
 
 # Optional processors with extra dependencies should be imported lazily
 try:  # noqa: SIM105

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Release script for hedonic package
+# Release script for segimage package
 # Usage: ./scripts/release.sh [patch|minor|major]
 
 set -e

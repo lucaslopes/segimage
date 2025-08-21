@@ -3,7 +3,8 @@
 Basic usage example for segimage library.
 
 This script demonstrates how to use the ImageProcessor class
-for common tasks like converting MATLAB .mat files and running SLICO superpixels.
+for common tasks like converting MATLAB .mat files, running SLICO superpixels,
+LBP visualization, color clustering, and building pixel graphs.
 """
 
 import sys
@@ -65,6 +66,54 @@ def main():
         print("You can run SLICO via CLI:")
         print("  segimage process input.png output_dir -t slico")
         print("  segimage process input.png output_dir -t slico --n-segments 500 --compactness 10 --sigma 1 --start-label 1")
+
+    # Example 3: LBP visualization
+    output_lbp = Path("output/example_lbp.png")
+    if input_img.exists():
+        print(f"\nProcessing {input_img} (LBP visualization)...")
+        output_lbp.parent.mkdir(parents=True, exist_ok=True)
+        success = processor.process_image(
+            input_img,
+            output_lbp,
+            "lbp",
+            palette="bw",
+        )
+        print("✅ LBP saved to:" if success else "❌ LBP failed", output_lbp if success else "")
+    else:
+        print("\nYou can run LBP via CLI:")
+        print("  segimage process input.png output_dir -t lbp --palette bw")
+
+    # Example 4: Color clustering
+    output_cluster = Path("output/example_cluster.png")
+    if input_img.exists():
+        print(f"\nProcessing {input_img} (color clustering)...")
+        output_cluster.parent.mkdir(parents=True, exist_ok=True)
+        success = processor.process_image(
+            input_img,
+            output_cluster,
+            "color_cluster",
+            K=3,
+            palette="rainbow",
+        )
+        print("✅ Clusters saved to:" if success else "❌ Clustering failed", output_cluster if success else "")
+    else:
+        print("\nYou can run color clustering via CLI:")
+        print("  segimage process input.png output_dir -t color_cluster -K 3 --palette rainbow")
+
+    # Example 5: Pixel graph (GraphML)
+    output_graph = Path("output/example_graph.graphml")
+    if input_img.exists():
+        print(f"\nProcessing {input_img} (graph build)...")
+        output_graph.parent.mkdir(parents=True, exist_ok=True)
+        success = processor.process_image(
+            input_img,
+            output_graph,
+            "graph",
+        )
+        print("✅ Graph saved to:" if success else "❌ Graph build failed", output_graph if success else "")
+    else:
+        print("\nYou can build the pixel graph via CLI:")
+        print("  segimage process input.png output_dir -t graph -f graphml")
 
 
 if __name__ == "__main__":

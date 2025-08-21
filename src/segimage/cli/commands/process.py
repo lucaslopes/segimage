@@ -13,7 +13,7 @@ from segimage.utils import write_meta_for_image
               default='mat_to_image',
               help='Type of processing to perform (default: mat_to_image)')
 @click.option('--output-format', '-f',
-              type=click.Choice(['png', 'jpg', 'jpeg', 'tif', 'tiff']),
+              type=click.Choice(['png', 'jpg', 'jpeg', 'tif', 'tiff', 'npy', 'graphml', 'gml', 'lg', 'lgl', 'edgelist', 'edges', 'txt', 'pickle', 'pkl']),
               default='png',
               help='Output format (default: png)')
 @click.option('--k', '-K', type=click.IntRange(1), default=2, help='Max number of communities/clusters (default: 2)')
@@ -84,7 +84,9 @@ def process(ctx, input_image_path: Path, output_directory: Path, process_type: s
         
         if success:
             click.echo(f"✅ Successfully processed image to: {output_path}")
-            if effective_save_meta:
+            # Only write .meta for image outputs
+            image_suffixes = {'.png', '.jpg', '.jpeg', '.tif', '.tiff'}
+            if effective_save_meta and output_path.suffix.lower() in image_suffixes:
                 try:
                     if write_meta_for_image(output_path):
                         if verbose:

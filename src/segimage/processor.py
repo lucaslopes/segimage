@@ -17,7 +17,7 @@ class ImageProcessor:
     
     def __init__(self):
         self.supported_input_formats = ['.mat', '.npy', '.tif', '.tiff', '.png', '.jpg', '.jpeg']
-        self.supported_output_formats = ['.png', '.jpg', '.jpeg', '.tif', '.tiff', '.npy']
+        self.supported_output_formats = ['.png', '.jpg', '.jpeg', '.tif', '.tiff', '.npy', '.graphml', '.gml', '.lg', '.lgl', '.edgelist', '.edges', '.txt', '.pickle', '.pkl']
     
     def process_mat_to_image(self, input_path: Union[str, Path], output_path: Union[str, Path], 
                            output_format: str = '.png') -> bool:

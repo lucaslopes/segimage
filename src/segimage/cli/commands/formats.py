@@ -13,5 +13,6 @@ def formats():
     click.echo("Supported formats:")
     click.echo(f"  Input:  {', '.join(formats['input'])}")
     click.echo(f"  Output: {', '.join(formats['output'])}")
+    click.echo("  Note: Graph outputs include .graphml, .gml, .lg/.lgl, .edgelist/.edges/.txt, .pickle/.pkl")
 
 
