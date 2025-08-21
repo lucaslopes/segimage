@@ -1,0 +1,30 @@
+[project]
+name = "segimage"
+version = "0.0.1"
+description = "Image segmentation and processing library with CLI support"
+readme = "README.md"
+authors = [
+    { name = "Lucas Lopes Felipe" }
+]
+requires-python = ">=3.8"
+dependencies = [
+    "scipy>=1.7.0",
+    "numpy>=1.20.0",
+    "click>=8.0.0",
+    "Pillow>=8.0.0",
+    "scikit-image>=0.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0.0",
+    "black>=21.0.0",
+    "flake8>=3.8.0",
+]
+
+[project.scripts]
+segimage = "segimage.cli.main:main"
+
+[build-system]
+requires = ["uv_build>=0.8.11,<0.9.0"]
+build-backend = "uv_build"
