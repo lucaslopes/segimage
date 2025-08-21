@@ -3,6 +3,7 @@ import click
 
 from segimage.processor import ImageProcessor
 from segimage.cli.main import main
+from segimage.utils import write_meta_for_image
 
 
 @main.command()
@@ -22,8 +23,10 @@ from segimage.cli.main import main
 @click.option('--sigma', type=float, default=1.0, help='Sigma for pre-smoothing in SLIC/SLICO (default: 1.0)')
 @click.option('--start-label', type=int, default=1, help='Starting label index for SLIC/SLICO (default: 1)')
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
-def process(input_image_path: Path, output_directory: Path, process_type: str, 
-           output_format: str, k: int, palette: str, n_segments: int, compactness: float, sigma: float, start_label: int, verbose: bool):
+@click.option('--save-meta/--no-save-meta', default=None, help='Write a .meta file with per-pixel details alongside outputs')
+@click.pass_obj
+def process(ctx, input_image_path: Path, output_directory: Path, process_type: str, 
+           output_format: str, k: int, palette: str, n_segments: int, compactness: float, sigma: float, start_label: int, verbose: bool, save_meta: bool | None):
     """
     Process an image file and save the result to the specified output directory.
     
@@ -46,6 +49,9 @@ def process(input_image_path: Path, output_directory: Path, process_type: str,
         
         output_path = output_directory / output_filename
         
+        # Determine whether to save .meta: subcommand option overrides global flag
+        effective_save_meta = bool(ctx.get('save_meta', False)) if save_meta is None else bool(save_meta)
+
         if verbose:
             click.echo(f"Processing {input_image_path}")
             click.echo(f"Output will be saved to: {output_path}")
@@ -57,6 +63,7 @@ def process(input_image_path: Path, output_directory: Path, process_type: str,
             click.echo(f"SLICO compactness: {compactness}")
             click.echo(f"SLICO sigma: {sigma}")
             click.echo(f"SLICO start_label: {start_label}")
+            click.echo(f"Save .meta: {effective_save_meta}")
         
         # Initialize processor and process image
         processor = ImageProcessor()
@@ -71,10 +78,21 @@ def process(input_image_path: Path, output_directory: Path, process_type: str,
                 "sigma": sigma,
                 "start_label": start_label,
             }
+        elif pt == 'lbp':
+            extra_opts = {"palette": palette}
         success = processor.process_image(input_image_path, output_path, process_type, **extra_opts)
         
         if success:
             click.echo(f"✅ Successfully processed image to: {output_path}")
+            if effective_save_meta:
+                try:
+                    if write_meta_for_image(output_path):
+                        if verbose:
+                            click.echo(f"Wrote metadata: {output_path.with_suffix(output_path.suffix + '.meta')}")
+                    else:
+                        click.echo("Warning: Failed to write .meta file")
+                except Exception as e:
+                    click.echo(f"Warning: Error writing .meta file: {e}")
         else:
             click.echo("❌ Failed to process image")
             raise click.Abort()

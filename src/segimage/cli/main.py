@@ -7,13 +7,20 @@ import click
 
 @click.group()
 @click.version_option()
-def main():
+@click.option(
+    "--save-meta/--no-save-meta",
+    default=False,
+    help="If enabled, write a .meta file with per-pixel details alongside outputs.",
+)
+@click.pass_context
+def main(ctx, save_meta: bool):
     """
     segimage - Image segmentation and processing library
     
     Process images using various algorithms and convert between formats.
     """
-    pass
+    ctx.ensure_object(dict)
+    ctx.obj["save_meta"] = bool(save_meta)
 
 
 # Import command modules to register them with the main group

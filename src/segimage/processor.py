@@ -95,14 +95,8 @@ class ImageProcessor:
                 success = self._save_as_image(image_data, output_path, output_format)
                 
                 if success:
-                    # Save metadata file for future reference
-                    metadata_path = output_path.with_suffix(output_path.suffix + '.meta')
-                    self._save_metadata(metadata_path, image_data, main_key, output_format)
-                    
                     print(f"Successfully converted {input_path} to {output_path}")
                     print(f"Data shape: {image_data.shape}, Data type: {image_data.dtype}")
-                    print(f"Metadata saved to: {metadata_path}")
-                    
                     return True
                 else:
                     return False
