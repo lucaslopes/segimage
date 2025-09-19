@@ -9,6 +9,7 @@ import numpy as np
 from scipy import io
 from PIL import Image
 from .processors import get_processor, available_processors
+from .pipelines import get_pipeline, available_pipelines
 from .utils import save_array_as_image, normalize_to_uint8
 
 
@@ -320,6 +321,10 @@ class ImageProcessor:
         elif process_type == "inspect":
             return self.inspect_mat_file(input_path)
         else:
+            # Pipelines take precedence if names collide
+            pipe = get_pipeline(process_type)
+            if pipe is not None:
+                return bool(pipe(Path(input_path), Path(output_path), **options))
             # Look up pluggable processors
             proc = get_processor(process_type)
             if proc is not None:
@@ -327,8 +332,9 @@ class ImageProcessor:
             print(f"Unknown process type: {process_type}")
             builtins = ["mat_to_image", "inspect"]
             extra = list(available_processors().keys())
-            all_types = builtins + extra
-            print(f"Supported types: {', '.join(all_types)}")
+            pipes = list(available_pipelines().keys())
+            all_types = builtins + extra + pipes
+            print(f"Supported types/pipelines: {', '.join(all_types)}")
             return False
     
     def get_supported_formats(self) -> dict:

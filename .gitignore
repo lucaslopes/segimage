@@ -175,3 +175,8 @@ cython_debug/
 
 # MacOS Finder
 .DS_Store
+
+# Files
+data/
+out/
+papers/

@@ -1,13 +1,27 @@
 # segimage
 
-A Python library for image segmentation and processing with command-line interface support.
+A Python library for image segmentation and processing with comprehensive command-line interface support.
 
-## Features
+## Overview
+**SegImage** is designed to handle various image formats, including MATLAB `.mat` files, and provides multiple processing algorithms for image analysis and graph generation. It features an extensible plugin architecture for easy addition of new algorithms.
 
-- **MATLAB .mat file support**: Read and process MATLAB data files
-- **Multiple output formats**: Convert to standard image formats (PNG, JPG, TIFF) and graph formats (GraphML, GML, etc.)
+## Project Details
+- **Name**: segimage
+- **Version**: 0.0.2
+- **Author**: Lucas Lopes Felipe
+- **Python Version**: ≥3.12
+- **License**: Custom (see LICENSE file)
+
+## 🖼️ **Core Features**
+
+- **MATLAB .mat file support**: Read and process MATLAB data files with automatic data extraction
+- **Multiple input formats**: `.mat`, `.npy`, `.tif`, `.tiff`, `.png`, `.jpg`, `.jpeg`
+- **Multiple output formats**: PNG, JPG, TIFF, NumPy arrays, and various graph formats
 - **Command-line interface**: Easy-to-use CLI for batch processing
 - **Extensible architecture**: Easy to add new processing methods
+- **Configurable graph edge filters**: Build pixel adjacency graphs with optional LBP/gray/RGB similarity-based edge filtering
+- **Pixel vs Superpixel node mode**: All graph builders (`grid`, `affinity`, `prob4`, `contrast4`) can build graphs whose nodes are either pixels or SLICO superpixels, selectable via CLI
+- **Graph view renderer**: Visualize graphs with adjustable node size, edge thickness, and weight-based edge opacity
 
 ## Installation
 
@@ -54,11 +68,28 @@ segimage process input.png output_directory -t slico --n-segments 300 --compactn
 # Create a pixel adjacency graph (8-connected) and save as GraphML
 segimage process input.png output_directory -t graph -f graphml
 
+# Graph with edge filtering:
+# - Keep edges only if neighboring pixels have similar gray levels (exact match)
+segimage process input.png output_directory -t graph -f graphml --edge-filter gray --edge-similarity 1.0
+# - Keep edges for similar RGB colors (allow moderate difference)
+segimage process input.png output_directory -t graph -f graphml --edge-filter rgb --edge-similarity 0.6
+# - Keep edges for similar LBP codes (continuous threshold)
+segimage process input.png output_directory -t graph -f graphml --edge-filter lbp --edge-similarity 0.8
+# - Exact LBP code equality (legacy behavior)
+segimage process input.png output_directory -t graph -f graphml --edge-filter lbp_eq
+
 # Show supported formats
 segimage formats
 
 # Show library information
 segimage info
+
+# Graph → View (pixels as nodes)
+segimage process input.png output_directory -t graph_view --graph-method grid --node-mode pixel --node-radius 2
+
+# Graph → View (superpixels as nodes)
+segimage process input.png output_directory -t graph_view --graph-method grid --node-mode superpixel \
+  --n-segments 300 --compactness 10 --sigma 1.0 --start-label 0 --node-radius 12 --edge-width-max 8
 ```
 
 ### Python API Usage
@@ -100,7 +131,7 @@ else:
 - Graphs: `.graphml`, `.gml`, `.lg`/`.lgl`, `.edgelist`/`.edges`/`.txt`, `.pickle`/`.pkl`
   - Note: Companion `.meta` files are only written for image outputs
 
-## Processing Types
+## 🔧 **Processing Types**
 
 Currently supported processing types:
 
@@ -108,7 +139,9 @@ Currently supported processing types:
 - **`color_cluster`**: Group pixels by most frequent exact colors into up to K clusters
 - **`lbp`**: Visualize 8-neighbor Local Binary Pattern values per pixel (palettes: `bw`, `rainbow`)
 - **`slico`**: SLICO superpixels using scikit-image's SLIC with `slic_zero=True`
-- **`graph`**: Build an 8-connected pixel adjacency graph and save to graph formats (GraphML, GML, etc.)
+- **`graph`**: Build an 8-connected pixel adjacency graph and save to graph formats (GraphML, GML, etc.).
+  - Optional edge filters: `--edge-filter {none, lbp_eq, lbp, gray, rgb}`
+  - Similarity control: `--edge-similarity [0..1]` where 1.0 requires exact match, 0.0 allows any difference (no filtering). Applies to `lbp`, `gray`, `rgb` and is ignored for `lbp_eq`.
 
 ### SLICO usage examples
 
@@ -166,7 +199,44 @@ segimage process input.png output_dir -t graph -f graphml
 
 # Save as GML instead
 segimage process input.png output_dir -t graph -f gml
+
+# Gray-level similarity filtering (exact match)
+segimage process input.png output_dir -t graph -f graphml --edge-filter gray --edge-similarity 1.0
+
+# RGB similarity filtering (looser threshold)
+segimage process input.png output_dir -t graph -f graphml --edge-filter rgb --edge-similarity 0.5
+
+# LBP similarity filtering
+segimage process input.png output_dir -t graph -f graphml --edge-filter lbp --edge-similarity 0.8
+
+# LBP exact code equality
+segimage process input.png output_dir -t graph -f graphml --edge-filter lbp_eq
+
+# Graph view (render graph overlay)
+segimage process input.png output_dir -t graph_view --graph-method grid --node-mode pixel --node-radius 2
+segimage process input.png output_dir -t graph_view --graph-method affinity --node-mode superpixel \
+  --n-segments 250 --compactness 8 --sigma 1.0 --start-label 1 --edge-width-max 12 --edge-min 0.0
 ```
+
+## 🌐 **Graph Generation & Export**
+
+- **Graph formats**: GraphML, GML, LGL, EdgeList, Pickle
+- **Edge filtering options**:
+  - `gray`: Filter by gray-level similarity
+  - `rgb`: Filter by RGB color similarity
+  - `lbp`: Filter by LBP code similarity
+  - `lbp_eq`: Exact LBP code equality
+  - `none`: No filtering (all edges included)
+
+## 🎨 **Visualization Options**
+
+- **Color palettes**: `bw` (black/white), `rainbow` (rank-normalized)
+- **Configurable parameters**:
+  - Node mode: `--node-mode {pixel, superpixel}`
+  - SLICO params for superpixels: `--n-segments`, `--compactness`, `--sigma`, `--start-label`
+  - Edge filtering: `--edge-filter {none, lbp_eq, lbp, gray, rgb}` + `--edge-similarity [0..1]`
+  - Graph view sizing: `--node-radius` (pixel radius), `--edge-width-max` (max thickness)
+  - Graph view filtering: `--edge-min` (minimum weight to draw)
 
 ## Examples
 
@@ -200,7 +270,47 @@ The library automatically:
 5. **Saves in standard formats** that macOS and other systems recognize as images
 6. **Preserves metadata** in companion .meta files
 
-## Development
+## 🏗️ **Architecture**
+
+### **Core Components**
+```
+src/segimage/
+├── processor.py          # Main processing logic and router
+├── utils.py             # Utility functions and helpers
+├── cli/                 # Command-line interface
+│   ├── main.py         # Click group and shared options
+│   └── commands/       # Subcommands implementation
+│       ├── process.py  # Main processing command
+│       ├── formats.py  # Supported formats listing
+│       ├── info.py     # Library information
+│       └── inspect.py  # File inspection
+└── processors/          # Pluggable processing algorithms
+    ├── color_cluster.py # Color clustering implementation
+    ├── lbp.py          # Local Binary Pattern processor
+    ├── slico.py        # SLICO superpixels
+    └── graph.py        # Graph generation and export
+```
+
+### **Design Patterns**
+- **Plugin Architecture**: Extensible processor system for easy addition of new algorithms
+- **Command Pattern**: CLI commands are modular and self-contained
+- **Strategy Pattern**: Different processing strategies can be swapped easily
+
+## 📦 **Dependencies**
+
+### **Core Dependencies**
+- `scipy≥1.7.0`: Scientific computing and MATLAB file support
+- `click≥8.0.0`: Command-line interface framework
+- `Pillow≥8.0.0`: Image processing and manipulation
+- `scikit-image≥0.20.0`: Advanced image processing algorithms
+- `hedonic≥0.0.7`: Additional utilities
+
+### **Development Dependencies**
+- `pytest≥6.0.0`: Testing framework
+- `black≥21.0.0`: Code formatting
+- `flake8≥3.8.0`: Linting and style checking
+
+## 🚀 **Development**
 
 ### Setup development environment
 ```bash
@@ -225,6 +335,40 @@ uv run black src/
 black src/
 ```
 
+### Lint code
+```bash
+uv run flake8 src/
+# or
+flake8 src/
+```
+
+### CLI Development
+```bash
+# Run CLI commands
+uv run segimage --help
+uv run segimage process --help
+```
+
+## 🎯 **Use Cases**
+
+### **Academic Research**
+- MATLAB data analysis and visualization
+- Image segmentation algorithm development
+- Graph-based image analysis
+- Texture analysis with LBP
+
+### **Data Science**
+- Batch image processing
+- Image format conversion
+- Superpixel generation for ML preprocessing
+- Graph representation of images
+
+### **Image Analysis**
+- Color-based segmentation
+- Texture analysis
+- Boundary detection
+- Region-based analysis
+
 ## Project Structure
 
 ```
@@ -240,6 +384,19 @@ segimage/
 ├── pyproject.toml          # Project configuration
 └── README.md              # This file
 ```
+
+## Project Status
+- **Current Version**: 0.0.2
+- **Development Stage**: Active development
+- **Python Support**: Modern Python (3.12+)
+- **Package Manager**: uv (recommended), pip supported
+
+## Future Enhancements
+- Additional segmentation algorithms
+- More graph export formats
+- Performance optimizations
+- Extended CLI options
+- Additional visualization palettes
 
 ## Contributing
 

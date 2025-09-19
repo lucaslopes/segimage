@@ -15,17 +15,17 @@ _REGISTRY: Dict[str, ProcessorFunc] = {}
 
 
 def register_processor(name: str, func: ProcessorFunc) -> None:
-    key = name.strip().lower()
-    _REGISTRY[key] = func
+	key = name.strip().lower()
+	_REGISTRY[key] = func
 
 
 def get_processor(name: str) -> ProcessorFunc:
-    key = name.strip().lower()
-    return _REGISTRY.get(key)  # type: ignore[return-value]
+	key = name.strip().lower()
+	return _REGISTRY.get(key)  # type: ignore[return-value]
 
 
 def available_processors() -> Dict[str, ProcessorFunc]:
-    return dict(_REGISTRY)
+	return dict(_REGISTRY)
 
 
 # Import built-in processors to ensure they are registered on package import
@@ -35,8 +35,8 @@ from . import graph  # noqa: E402,F401
 
 # Optional processors with extra dependencies should be imported lazily
 try:  # noqa: SIM105
-    from . import slico  # noqa: E402,F401
+	from . import slico  # noqa: E402,F401
 except Exception:  # If scikit-image is not installed, skip registration silently
-    pass
+	pass
 
 

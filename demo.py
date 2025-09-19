@@ -49,6 +49,13 @@ def demo_cli_help():
         print("   - segimage formats")
         print("   - segimage info")
         print("   - segimage inspect")
+        print("\nGraph edge filtering options:")
+        print("   --edge-filter {none, lbp_eq, lbp, gray, rgb}")
+        print("   --edge-similarity [0..1]  (1.0 exact, 0.0 no filtering; applies to lbp/gray/rgb)")
+        print("\nGraph view:")
+        print("   segimage process input.png out -t graph_view --graph-method grid --node-mode pixel --node-radius 2")
+        print("   segimage process input.png out -t graph_view --graph-method affinity --node-mode superpixel ")
+        print("      --n-segments 250 --compactness 8 --sigma 1.0 --start-label 1 --edge-width-max 12 --edge-min 0.0")
     except Exception as e:
         print(f"❌ CLI test failed: {e}")
 
@@ -74,6 +81,12 @@ def main():
     print("  segimage process input.mat output/ -f png")
     print("  segimage process input.mat output/ -f jpg")
     print("  segimage process input.mat output/ -f tif")
+    print("\nGraph examples:")
+    print("  segimage process input.png output_dir -t graph -f graphml")
+    print("  segimage process input.png output_dir -t graph -f graphml --edge-filter gray --edge-similarity 1.0")
+    print("  segimage process input.png output_dir -t graph -f graphml --edge-filter rgb --edge-similarity 0.6")
+    print("  segimage process input.png output_dir -t graph -f graphml --edge-filter lbp --edge-similarity 0.8")
+    print("  segimage process input.png output_dir -t graph -f graphml --edge-filter lbp_eq")
 
 
 if __name__ == "__main__":

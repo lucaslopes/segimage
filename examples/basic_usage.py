@@ -115,6 +115,56 @@ def main():
         print("\nYou can build the pixel graph via CLI:")
         print("  segimage process input.png output_dir -t graph -f graphml")
 
+    # Example 6: Graph with edge filtering (gray similarity)
+    if input_img.exists():
+        out_graph_gray = Path("output/example_graph_gray_1_0.graphml")
+        print(f"\nProcessing {input_img} (graph with gray similarity = 1.0)...")
+        out_graph_gray.parent.mkdir(parents=True, exist_ok=True)
+        success = processor.process_image(
+            input_img,
+            out_graph_gray,
+            "graph",
+            edge_filter="gray",
+            edge_similarity=1.0,
+        )
+        print("✅ Graph (gray filtered) saved to:" if success else "❌ Graph (gray filtered) failed", out_graph_gray if success else "")
+
+    # Example 7: Graph with RGB similarity
+    if input_img.exists():
+        out_graph_rgb = Path("output/example_graph_rgb_0_6.graphml")
+        print(f"\nProcessing {input_img} (graph with rgb similarity = 0.6)...")
+        out_graph_rgb.parent.mkdir(parents=True, exist_ok=True)
+        success = processor.process_image(
+            input_img,
+            out_graph_rgb,
+            "graph",
+            edge_filter="rgb",
+            edge_similarity=0.6,
+        )
+        print("✅ Graph (rgb filtered) saved to:" if success else "❌ Graph (rgb filtered) failed", out_graph_rgb if success else "")
+
+    # Example 8: Graph with LBP similarity and equality
+    if input_img.exists():
+        out_graph_lbp = Path("output/example_graph_lbp_0_8.graphml")
+        out_graph_lbp_eq = Path("output/example_graph_lbp_eq.graphml")
+        print(f"\nProcessing {input_img} (graph with lbp similarity = 0.8 and lbp_eq)...")
+        out_graph_lbp.parent.mkdir(parents=True, exist_ok=True)
+        processor.process_image(
+            input_img,
+            out_graph_lbp,
+            "graph",
+            edge_filter="lbp",
+            edge_similarity=0.8,
+        )
+        processor.process_image(
+            input_img,
+            out_graph_lbp_eq,
+            "graph",
+            edge_filter="lbp_eq",
+        )
+        print("✅ Graph (lbp filtered) saved to:", out_graph_lbp)
+        print("✅ Graph (lbp equality) saved to:", out_graph_lbp_eq)
+
 
 if __name__ == "__main__":
     main()

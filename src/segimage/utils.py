@@ -235,10 +235,35 @@ def colormap_from_unit_scalar(values: np.ndarray, palette: Literal["bw", "rainbo
 
         h, w = vals.shape
         out = np.empty((h, w, 3), dtype=np.uint8)
-        # Vectorized mapping through iteration over rows for simplicity
+
+        # If the data appears discrete with few unique values, assign evenly spaced
+        # high-contrast hues spanning violet→red for clear separation.
+        unique_vals = np.unique(vals)
+        if unique_vals.size <= 16:
+            U = int(unique_vals.size)
+            if U == 1:
+                hues = [0.0]  # red
+            else:
+                # Violet (~0.83) down to Red (0.0)
+                hues = np.linspace(0.83, 0.0, U, endpoint=True)
+            # Build a lookup table from value to hue
+            value_to_hue = {uv: float(hues[idx]) for idx, uv in enumerate(unique_vals.tolist())}
+            for i in range(h):
+                for j in range(w):
+                    hue = value_to_hue[float(vals[i, j])]
+                    r_f, g_f, b_f = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
+                    out[i, j, 0] = int(r_f * 255)
+                    out[i, j, 1] = int(g_f * 255)
+                    out[i, j, 2] = int(b_f * 255)
+            return out, "RGB"
+
+        # Continuous case: map [0,1] → [violet(0.83), red(0.0)]
         for i in range(h):
             for j in range(w):
-                r_f, g_f, b_f = colorsys.hsv_to_rgb(vals[i, j], 1.0, 1.0)
+                v = float(vals[i, j])
+                v = 0.0 if v < 0.0 else 1.0 if v > 1.0 else v
+                hue = 0.83 * (1.0 - v)
+                r_f, g_f, b_f = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
                 out[i, j, 0] = int(r_f * 255)
                 out[i, j, 1] = int(g_f * 255)
                 out[i, j, 2] = int(b_f * 255)
