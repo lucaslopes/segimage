@@ -37,6 +37,7 @@ def compute_slico_segments(
     compactness: float = 2.0,
     sigma: float = 1.0,
     start_label: int = 1,
+    slic_zero: bool = True,
 ) -> np.ndarray:
     if slic is None or img_as_float is None:
         raise RuntimeError("scikit-image is required for superpixel (SLICO) mode but is not available")
@@ -49,7 +50,7 @@ def compute_slico_segments(
         sigma=float(sigma),
         start_label=int(start_label),
         channel_axis=-1,
-        slic_zero=True,
+        slic_zero=bool(slic_zero),
     )
     return segments.astype(np.int32)
 

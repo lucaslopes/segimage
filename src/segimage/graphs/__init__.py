@@ -1,25 +1,20 @@
 """
-Graph builder registry.
+Graph builder registry (lazy-load).
 
-Pipelines call `get_graph_builder(name)` to obtain a function that converts
-an image (or superpixels) into a graph. Builders self-register on import.
-
-Built-in builders (imported below to trigger registration):
-- grid: 8-neighbor pixel grid with optional edge filtering (lbp/gray/rgb)
-- affinity: Gaussian affinity within a radius using L*a*b* or intensity
-- prob4: initial 4-connected pixel graph (exp(-||ΔI||^2 / σ_I^2))
-- contrast4: initial 4-connected pixel graph (exp(-α·|ΔI|))
-- superpixel_adjacency: adjacency graph between SLICO segments
+We avoid importing heavy dependencies (e.g., python-igraph) at module import
+time so ComfyUI can list nodes even if optional deps are missing. Builders are
+loaded on demand when `get_graph_builder(name)` is first called.
 """
 
 from __future__ import annotations
 
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, TYPE_CHECKING
 
-from igraph import Graph
+if TYPE_CHECKING:  # only for typing; avoid runtime import
+    from igraph import Graph  # pragma: no cover
 
 
-GraphBuilderFunc = Callable[..., Graph]
+GraphBuilderFunc = Callable[..., 'Graph']
 
 _REGISTRY: Dict[str, GraphBuilderFunc] = {}
 
@@ -36,15 +31,34 @@ def get_graph_builder(name: str) -> Optional[GraphBuilderFunc]:
 
 def available_graph_builders() -> Dict[str, GraphBuilderFunc]:
     return dict(_REGISTRY)
-def available_graph_builders() -> Dict[str, GraphBuilderFunc]:
-    return dict(_REGISTRY)
 
 
-# Import built-in builders so they register themselves
-from . import grid  # noqa: E402,F401
-from . import affinity  # noqa: E402,F401
-from . import prob4  # noqa: E402,F401
-from . import contrast4  # noqa: E402,F401
-# superpixel_adjacency is now subsumed by node_mode='superpixel' in the above builders
+_LAZY_LOADERS = {
+    "grid": lambda: __import__(__name__ + ".grid", fromlist=["build_grid_pixel_graph"]).grid.build_grid_pixel_graph,  # type: ignore[attr-defined]
+    "affinity": lambda: __import__(__name__ + ".affinity", fromlist=["build_affinity_pixel_graph"]).affinity.build_affinity_pixel_graph,  # type: ignore[attr-defined]
+    "prob4": lambda: __import__(__name__ + ".prob4", fromlist=["build_prob4_pixel_graph"]).prob4.build_prob4_pixel_graph,  # type: ignore[attr-defined]
+    "contrast4": lambda: __import__(__name__ + ".contrast4", fromlist=["build_contrast4_pixel_graph"]).contrast4.build_contrast4_pixel_graph,  # type: ignore[attr-defined]
+}
+
+
+def _ensure_builder_loaded(name: str) -> None:
+    key = name.strip().lower()
+    if key in _REGISTRY:
+        return
+    loader = _LAZY_LOADERS.get(key)
+    if loader is None:
+        return
+    try:
+        func = loader()
+        register_graph_builder(key, func)  # type: ignore[arg-type]
+    except Exception:
+        # Leave unregistered; caller will handle unknown builder
+        pass
+
+
+def get_graph_builder(name: str) -> Optional[GraphBuilderFunc]:
+    _ensure_builder_loaded(name)
+    key = name.strip().lower()
+    return _REGISTRY.get(key)
 
 

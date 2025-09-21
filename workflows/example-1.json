@@ -1,0 +1,201 @@
+{
+  "last_node_id": 6,
+  "last_link_id": 5,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "Load Image",
+      "pos": [
+        160,
+        -240
+      ],
+      "size": [
+        315,
+        58
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            1,
+            2
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Load Image"
+      },
+      "widgets_values": [
+        "color.png"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "SegImage: SLICO",
+      "pos": [
+        520,
+        -320
+      ],
+      "size": [
+        315,
+        140
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "labels",
+          "type": "SLICO_LABELS",
+          "links": [
+            3
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "preview",
+          "type": "IMAGE",
+          "links": [
+            4
+          ],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SegImage: SLICO"
+      },
+      "widgets_values": [
+        280,
+        2.0,
+        1.0,
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "type": "SegImage: Build Graph",
+      "pos": [
+        520,
+        -80
+      ],
+      "size": [
+        350,
+        220
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 2
+        },
+        {
+          "name": "segments",
+          "type": "SLICO_LABELS",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "graph",
+          "type": "SEG_GRAPH",
+          "links": [
+            5
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "preview",
+          "type": "IMAGE",
+          "links": [],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SegImage: Build Graph"
+      },
+      "widgets_values": [
+        "grid",
+        "superpixel",
+        "none",
+        0.0,
+        5,
+        10.0,
+        8.0,
+        10.0,
+        280,
+        2.0,
+        1.0,
+        1,
+        true
+      ]
+    },
+    {
+      "id": 4,
+      "type": "SegImage: Graph View",
+      "pos": [
+        900,
+        -80
+      ],
+      "size": [
+        300,
+        120
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "graph",
+          "type": "SEG_GRAPH",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "preview",
+          "type": "IMAGE",
+          "links": [],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SegImage: Graph View"
+      },
+      "widgets_values": [
+        2,
+        true
+      ]
+    }
+  ],
+  "links": [[1,1,0,2,0,"IMAGE"],[2,1,0,3,0,"IMAGE"],[3,2,0,3,1,"SLICO_LABELS"],[5,3,0,4,0,"SEG_GRAPH"],[4,2,1,0,0,"IMAGE"]],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.0,
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0
+  },
+  "version": 0.4
+}

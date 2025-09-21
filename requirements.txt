@@ -1,0 +1,4 @@
+Pillow
+scikit-image>=0.20.0
+hedonic>=0.0.10
+
