@@ -70,16 +70,6 @@ def install_dependencies():
 
 install_dependencies()
 
-from .nodes import *
+from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
-
-NODE_CLASS_MAPPINGS = {
-    "SegImage: SLICO": SegimageSLICO,
-    "SegImage: Build Graph": SegimageGraphBuilder,
-    "SegImage: Graph View": SegimageGraphView,
-    "SegImage: Hedonic Communities": SegimageHedonicCommunities,
-    "SegImage: Identity": SegimageIdentity,
-}
-
-
-__all__ = ['NODE_CLASS_MAPPINGS']
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

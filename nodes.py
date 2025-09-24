@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 from PIL import Image, ImageDraw
+import colorsys
 
 try:
     import folder_paths  # type: ignore
@@ -341,185 +342,58 @@ class SegimageSLICO:
             return (fallback_segments, _pil_to_comfy_image(preview))
 
 
-class SegimageGraphBuilder:
+class SegimageGraphView:
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
-                "image": ("IMAGE",),
-                "graph_method": (("grid", "affinity", "prob4", "contrast4"), {"tooltip": "Method for constructing the graph."}),
-                "node_mode": (("pixel", "superpixel"), {"tooltip": "Whether graph nodes represent individual pixels or superpixels."}),
+                "graph": ("SEG_GRAPH",),
             },
             "optional": {
-                "edge_filter": (("none", "lbp_eq", "lbp", "gray", "rgb"), {"default": "none", "tooltip": "Filter type for edges in grid method."}),
-                "edge_similarity": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "tooltip": "Similarity threshold for edge filtering (0 = all edges, 1 = very similar)."}),
-                "radius": ("INT", {"default": 5, "min": 1, "max": 64, "tooltip": "Neighborhood radius for affinity graph."}),
-                "sigma_I": ("FLOAT", {"default": 10.0, "min": 0.0001, "max": 255.0, "tooltip": "Intensity sigma for affinity and prob4 methods."}),
-                "sigma_X": ("FLOAT", {"default": 8.0, "min": 0.0001, "max": 512.0, "tooltip": "Spatial sigma for affinity method."}),
-                "alpha": ("FLOAT", {"default": 10.0, "min": 0.0, "max": 100.0, "tooltip": "Scaling factor for contrast4 method."}),
-                "segments": ("SLICO_LABELS", {"tooltip": "Optional pre-computed superpixel labels."}),
-                "n_segments": ("INT", {"default": 280, "min": 10, "max": 5000, "tooltip": "Number of segments for internal superpixel computation if not provided."}),
-                "compactness": ("FLOAT", {"default": 2.0, "min": 0.1, "max": 100.0, "tooltip": "Compactness for internal superpixel computation."}),
-                "sigma": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "tooltip": "Smoothing sigma for internal superpixel computation."}),
-                "start_label": ("INT", {"default": 1, "min": 0, "max": 100000, "tooltip": "Starting label for internal superpixel labels."}),
-                "show_nodes": ("BOOLEAN", {"default": True, "tooltip": "Display nodes in the graph preview."}),
+                "node_radius": ("INT", {"default": 2, "min": 1, "max": 20, "tooltip": "Radius size for drawing nodes in the preview."}),
+                "show_nodes": ("BOOLEAN", {"default": True, "tooltip": "Whether to display nodes in the graph preview."}),
+                "edge_width_max": ("INT", {"default": 3, "min": 1, "max": 20, "tooltip": "Maximum edge width in pixels."}),
+                "edge_min": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "tooltip": "Minimum edge weight threshold to display (0.0 shows all)."}),
+                "labels": ("COMMUNITY_LABELS",),
+                "palette": (("bw", "rainbow"), {"default": "rainbow"}),
             },
         }
 
-    RETURN_TYPES = ("SEG_GRAPH", "IMAGE")
-    RETURN_NAMES = ("graph", "preview")
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("preview",)
     FUNCTION = "run"
     CATEGORY = "SegImage"
 
-    def _build_graph_with_segments(
-        self,
-        method: str,
-        array: np.ndarray,
-        is_rgb: bool,
-        segments: np.ndarray,
-        *,
-        edge_filter: Optional[str] = None,
-        edge_similarity: float = 0.0,
-        radius: int = 5,
-        sigma_I: float = 10.0,
-        sigma_X: float = 8.0,
-        alpha: float = 10.0,
-    ):
+    @classmethod
+    def _render_preview(cls, g: Any, *, node_radius: int = 2, show_nodes: bool = True, edge_width_max: int = 3, edge_min: float = 0.0, labels: Optional[np.ndarray] = None, palette: Optional[str] = None) -> Image.Image:
         from igraph import Graph
-        from segimage.graphs.segments import (
-            ensure_rgb_uint8,
-            compute_segment_means_and_centroids,
-            compute_segment_adjacency_edges,
-        )
-
-        image_u8 = ensure_rgb_uint8(array, is_rgb)
-        mean_r, mean_g, mean_b, mean_gray, cx, cy = compute_segment_means_and_centroids(image_u8, segments)
-        edges = compute_segment_adjacency_edges(segments)
-        num_nodes = int(mean_r.size)
-
-        g = Graph()
-        g.add_vertices(int(num_nodes))
-        h, w = segments.shape
-        g["width"] = int(w)
-        g["height"] = int(h)
-        g["node_mode"] = "superpixel"
-        g.vs["r"] = mean_r.astype(int).tolist()
-        g.vs["g"] = mean_g.astype(int).tolist()
-        g.vs["b"] = mean_b.astype(int).tolist()
-        g.vs["gray"] = mean_gray.astype(int).tolist()
-        g.vs["cx"] = cx.astype(float).tolist()
-        g.vs["cy"] = cy.astype(float).tolist()
-        if edges.size > 0:
-            g.add_edges(edges.tolist())
-
-        method_l = method.strip().lower()
-        if method_l == "grid":
-            filter_kind: Optional[str] = None
-            if edge_filter is not None:
-                ef = edge_filter.strip().lower()
-                if ef in ("none", ""):
-                    filter_kind = None
-                elif ef in ("lbp_eq", "lbp", "gray", "rgb"):
-                    filter_kind = ef
-                else:
-                    raise ValueError(f"Unsupported edge_filter: {edge_filter}")
-            if edges.size > 0 and filter_kind is not None:
-                from segimage.utils import compute_lbp_float_from_rgb_uint8
-
-                thr = 1.0 - float(edge_similarity)
-                if filter_kind in ("lbp_eq", "lbp"):
-                    lbp_float = compute_lbp_float_from_rgb_uint8(image_u8)
-                    lbp_u8 = (lbp_float * 255.0 + 0.5).astype(np.uint8)
-                    lbp_flat = lbp_u8.reshape(-1)
-                    flat_ids = segments.reshape(-1)
-                    lbp_node = np.zeros(num_nodes, dtype=np.uint8)
-                    for nid in range(num_nodes):
-                        m = flat_ids == nid
-                        if not np.any(m):
-                            continue
-                        hist = np.bincount(lbp_flat[m], minlength=256)
-                        lbp_node[nid] = np.uint8(np.argmax(hist))
-                    if filter_kind == "lbp_eq":
-                        mask = lbp_node[edges[:, 0]] == lbp_node[edges[:, 1]]
-                        edges = edges[mask]
-                    else:
-                        d = np.abs(lbp_node[edges[:, 0]].astype(np.int16) - lbp_node[edges[:, 1]].astype(np.int16)).astype(np.float64) / 255.0
-                        edges = edges[d <= thr]
-                elif filter_kind == "gray":
-                    d = np.abs(mean_gray[edges[:, 0]].astype(np.int16) - mean_gray[edges[:, 1]].astype(np.int16)).astype(np.float64) / 255.0
-                    edges = edges[d <= thr]
-                elif filter_kind == "rgb":
-                    c1 = np.stack([mean_r, mean_g, mean_b], axis=-1).astype(np.int16)
-                    diff = c1[edges[:, 0]] - c1[edges[:, 1]]
-                    dist = np.sqrt((diff[:, 0].astype(np.float64) ** 2) + (diff[:, 1].astype(np.float64) ** 2) + (diff[:, 2].astype(np.float64) ** 2))
-                    max_d = 255.0 * np.sqrt(3.0)
-                    d = dist / max_d
-                    edges = edges[d <= thr]
-            g.delete_edges(None)
-            if edges.size > 0:
-                g.add_edges(edges.tolist())
-
-        elif method_l == "affinity":
-            sigI = float(max(1e-12, sigma_I))
-            sigX = float(max(1e-12, sigma_X))
-            if edges.size > 0:
-                weights: List[float] = []
-                if is_rgb:
-                    feats = np.stack([mean_r, mean_g, mean_b], axis=-1).astype(np.float64)
-                else:
-                    feats = mean_gray.reshape(-1, 1).astype(np.float64)
-                coords = np.stack([cy, cx], axis=-1).astype(np.float64)
-                for u, v in edges:
-                    df = feats[u] - feats[v]
-                    dist_feature_sq = float(np.dot(df, df))
-                    dc = coords[u] - coords[v]
-                    dist_spatial = float(np.hypot(dc[0], dc[1]))
-                    w_I = float(np.exp(-(dist_feature_sq) / (sigI * sigI)))
-                    w_X = float(np.exp(-(dist_spatial * dist_spatial) / (sigX * sigX)))
-                    weights.append(float(w_I * w_X))
-                g.delete_edges(None)
-                g.add_edges(edges.tolist())
-                g.es["weight"] = weights
-
-        elif method_l == "prob4":
-            sigI = float(max(1e-12, sigma_I))
-            if edges.size > 0:
-                weights = []
-                for u, v in edges:
-                    d = abs(int(mean_gray[u]) - int(mean_gray[v]))
-                    wgt = float(np.exp(-(d * d) / (sigI * sigI)))
-                    weights.append(wgt)
-                g.delete_edges(None)
-                g.add_edges(edges.tolist())
-                g.es["weight"] = weights
-
-        elif method_l == "contrast4":
-            a = float(max(0.0, alpha))
-            if edges.size > 0:
-                h_s, w_s = segments.shape
-                feats = np.column_stack([
-                    mean_gray.astype(np.float64) / 255.0,
-                    cy.astype(np.float64) / max(1.0, float(h_s)),
-                    cx.astype(np.float64) / max(1.0, float(w_s)),
-                ])
-                dim_scale = float(np.sqrt(max(1, feats.shape[1])))
-                weights = []
-                for u, v in edges:
-                    d = float(np.linalg.norm(feats[u] - feats[v]) / dim_scale)
-                    weights.append(float(np.exp(-a * d)))
-                g.delete_edges(None)
-                g.add_edges(edges.tolist())
-                g.es["weight"] = weights
-        return g
-
-    def _render_preview(self, g: Any, *, node_radius: int = 2, show_nodes: bool = True) -> Image.Image:
-        from igraph import Graph
-
         if not isinstance(g, Graph):
             raise ValueError("graph must be an igraph.Graph")
+        communities = None
+        if labels is not None:
+            communities = labels.tolist()
+        elif "community" in g.vs.attributes():
+            communities = g.vs["community"]
+
+        comm_to_color = None
+        if communities is not None and palette is not None and len(communities) > 0:
+            unique_comms = sorted(set(communities))
+            num_comms = len(unique_comms)
+            if num_comms > 1:
+                comm_to_idx = {c: i for i, c in enumerate(unique_comms)}
+                comm_to_color = {}
+                for c in unique_comms:
+                    val = comm_to_idx[c] / (num_comms - 1.0)
+                    if palette == "rainbow":
+                        red, green, blue = colorsys.hsv_to_rgb(val * 0.8, 1.0, 1.0)
+                        color = (int(255 * red), int(255 * green), int(255 * blue))
+                    else:
+                        gray = int(255 * val)
+                        color = (gray, gray, gray)
+                    comm_to_color[c] = color
 
         try:
-            w = int(g["width"]); h = int(g["height"])  # type: ignore[index]
+            w = int(g["width"]); h = int(g["height"])
         except Exception:
             n = int(g.vcount())
             side = int(max(1, np.sqrt(max(1, n))))
@@ -542,17 +416,28 @@ class SegimageGraphBuilder:
         draw = ImageDraw.Draw(overlay, "RGBA")
 
         try:
-            weights = list(g.es["weight"])  # type: ignore[arg-type]
+            weights = list(g.es["weight"])
         except Exception:
-            weights = None
-        if weights is not None:
-            alphas = _normalize_weights(weights)
-            alphas = [32.0 + (220.0 - 32.0) * v for v in alphas]
-            widths = [int(round(1.0 + (max(2, 2 * draw_node_r) - 1.0) * v)) for v in _normalize_weights(weights)]
+            weights = [1.0] * g.ecount()  # Treat unweighted as full weight
+
+        if weights:
+            normalized_weights = _normalize_weights(weights)
+            alphas = [32.0 + (220.0 - 32.0) * v for v in normalized_weights]
+            widths = [1 + int((edge_width_max - 1) * v) for v in normalized_weights]
         else:
-            alphas = None
-            widths = None
-            width_const = 1
+            alphas = [64] * g.ecount()
+            widths = [1] * g.ecount()
+
+        # Filter edges based on edge_min
+        edgelist = []
+        filtered_alphas = []
+        filtered_widths = []
+        for e_idx, (u, v) in enumerate(g.get_edgelist()):
+            if normalized_weights[e_idx] < edge_min:
+                continue
+            edgelist.append((u, v))
+            filtered_alphas.append(alphas[e_idx])
+            filtered_widths.append(widths[e_idx])
 
         width = int(w)
         if node_mode == "superpixel" and all(k in g.vs.attributes() for k in ("cx", "cy")):
@@ -561,14 +446,20 @@ class SegimageGraphBuilder:
         else:
             cx = cy = None
 
-        for e_idx, (u, v) in enumerate(g.get_edgelist()):
-            a = int(alphas[e_idx]) if alphas is not None else 64
-            ew = int(widths[e_idx]) if widths is not None else int(width_const)
+        for e_idx, (u, v) in enumerate(edgelist):
+            a = int(filtered_alphas[e_idx])
+            ew = int(filtered_widths[e_idx])
 
             if node_mode == "superpixel" and cx is not None and cy is not None:
                 ux = float(cx[int(u)]); uy = float(cy[int(u)])
                 vx = float(cx[int(v)]); vy = float(cy[int(v)])
-                if all(k in g.vs.attributes() for k in ("r", "g", "b")):
+                if comm_to_color is not None:
+                    comm_u = communities[int(u)]
+                    comm_v = communities[int(v)]
+                    cu = comm_to_color[comm_u]
+                    cv = comm_to_color[comm_v]
+                    col = tuple(((np.array(cu) + np.array(cv)) // 2).tolist() + [a])
+                elif all(k in g.vs.attributes() for k in ("r", "g", "b")):
                     c1 = np.array([g.vs[int(u)]["r"], g.vs[int(u)]["g"], g.vs[int(u)]["b"]], dtype=int)
                     c2 = np.array([g.vs[int(v)]["r"], g.vs[int(v)]["g"], g.vs[int(v)]["b"]], dtype=int)
                     col = tuple(((c1 + c2) // 2).tolist() + [a])
@@ -583,7 +474,13 @@ class SegimageGraphBuilder:
 
             uy, ux = divmod(int(u), width)
             vy, vx = divmod(int(v), width)
-            if all(k in g.vs.attributes() for k in ("r", "g", "b")):
+            if comm_to_color is not None:
+                comm_u = communities[int(u)]
+                comm_v = communities[int(v)]
+                cu = comm_to_color[comm_u]
+                cv = comm_to_color[comm_v]
+                col = tuple(((np.array(cu) + np.array(cv)) // 2).tolist() + [a])
+            elif all(k in g.vs.attributes() for k in ("r", "g", "b")):
                 c1 = np.array([g.vs[int(u)]["r"], g.vs[int(u)]["g"], g.vs[int(u)]["b"]], dtype=int)
                 c2 = np.array([g.vs[int(v)]["r"], g.vs[int(v)]["g"], g.vs[int(v)]["b"]], dtype=int)
                 col = tuple(((c1 + c2) // 2).tolist() + [a])
@@ -606,7 +503,10 @@ class SegimageGraphBuilder:
                     tly = py - draw_node_r
                     brx = px + draw_node_r
                     bry = py + draw_node_r
-                    if has_rgb:
+                    if comm_to_color is not None:
+                        comm = communities[i]
+                        r, g_, b_ = comm_to_color[comm]
+                    elif has_rgb:
                         r = int(g.vs[i]["r"]); g_ = int(g.vs[i]["g"]); b_ = int(g.vs[i]["b"])
                     else:
                         v = int(g.vs[i].get("gray", 128)); r = g_ = b_ = v
@@ -620,130 +520,30 @@ class SegimageGraphBuilder:
                         tly = cyp - draw_node_r
                         brx = cxp + draw_node_r
                         bry = cyp + draw_node_r
-                        if all(k in g.vs.attributes() for k in ("r", "g", "b")):
-                            r, g_, b_ = int(g.vs[yy * w + xx]["r"]), int(g.vs[yy * w + xx]["g"]), int(g.vs[yy * w + xx]["b"])
+                        node_idx = yy * w + xx
+                        if comm_to_color is not None:
+                            comm = communities[node_idx]
+                            r, g_, b_ = comm_to_color[comm]
+                        elif all(k in g.vs.attributes() for k in ("r", "g", "b")):
+                            r, g_, b_ = int(g.vs[node_idx]["r"]), int(g.vs[node_idx]["g"]), int(g.vs[node_idx]["b"])
                         else:
-                            v = int(g.vs[yy * w + xx].get("gray", 128)); r = g_ = b_ = v
+                            v = int(g.vs[node_idx].get("gray", 128)); r = g_ = b_ = v
                         draw.ellipse([(tlx, tly), (brx, bry)], fill=(r, g_, b_, node_alpha), outline=(r, g_, b_, node_alpha), width=1)
 
         return Image.alpha_composite(base.convert("RGBA"), overlay)
 
-    def run(
-        self,
-        image: Any,
-        graph_method: str,
-        node_mode: str,
-        edge_filter: Optional[str] = None,
-        edge_similarity: float = 0.0,
-        radius: int = 5,
-        sigma_I: float = 10.0,
-        sigma_X: float = 8.0,
-        alpha: float = 10.0,
-        segments: Optional[np.ndarray] = None,
-        n_segments: int = 280,
-        compactness: float = 2.0,
-        sigma: float = 1.0,
-        start_label: int = 1,
-        show_nodes: bool = True,
-    ) -> Tuple[Any, Dict[str, Any]]:
+    def run(self, graph: Any, node_radius: int = 2, show_nodes: bool = True, edge_width_max: int = 3, edge_min: float = 0.0, labels: Optional[np.ndarray] = None, palette: str = "rainbow") -> Tuple[Dict[str, Any]]:
+        from igraph import Graph
+        if not isinstance(graph, Graph):
+            print(f"[SegImage] Invalid graph type in GraphView run: {type(graph)} {graph}")
+            img = Image.new("RGB", (1, 1), (0, 0, 0))
+            return (_pil_to_comfy_image(img),)
         try:
-            arr, is_rgb = _image_to_array_and_flag(image)
-        except Exception:
-            # Build a minimal empty graph and a blank preview
-            try:
-                from igraph import Graph
-                g = Graph(); g.add_vertices(1); g["width"] = 1; g["height"] = 1
-            except Exception:
-                g = {"width": 1, "height": 1}
-            preview = Image.new("RGB", (1, 1), (0, 0, 0))
-            return (g, _pil_to_comfy_image(preview))
-
-        method = (graph_method or "grid").strip().lower()
-        mode = (node_mode or "pixel").strip().lower()
-
-        if mode == "superpixel" and segments is not None:
-            g = self._build_graph_with_segments(
-                method,
-                arr,
-                is_rgb,
-                segments,
-                edge_filter=edge_filter,
-                edge_similarity=float(edge_similarity),
-                radius=int(radius),
-                sigma_I=float(sigma_I),
-                sigma_X=float(sigma_X),
-                alpha=float(alpha),
-            )
-        else:
-            # Lazy import of segimage builder registry
-            from segimage.graphs import get_graph_builder
-            builder = get_graph_builder(method)
-            if builder is None:
-                raise ValueError(f"Unknown graph_method '{graph_method}'")
-            kwargs: Dict[str, Any] = {"node_mode": mode}
-            if method == "grid":
-                kwargs.update({
-                    "edge_filter": None if edge_filter in (None, "none", "") else str(edge_filter),
-                    "edge_similarity": float(edge_similarity),
-                    "n_segments": int(n_segments),
-                    "compactness": float(compactness),
-                    "sigma": float(sigma),
-                    "start_label": int(start_label),
-                })
-            elif method == "affinity":
-                kwargs.update({
-                    "radius": int(radius),
-                    "sigma_I": float(sigma_I),
-                    "sigma_X": float(sigma_X),
-                    "n_segments": int(n_segments),
-                    "compactness": float(compactness),
-                    "sigma": float(sigma),
-                    "start_label": int(start_label),
-                })
-            elif method == "prob4":
-                kwargs.update({
-                    "sigma_I": float(sigma_I),
-                    "n_segments": int(n_segments),
-                    "compactness": float(compactness),
-                    "sigma": float(sigma),
-                    "start_label": int(start_label),
-                })
-            elif method == "contrast4":
-                kwargs.update({
-                    "alpha": float(alpha),
-                    "n_segments": int(n_segments),
-                    "compactness": float(compactness),
-                    "sigma": float(sigma),
-                    "start_label": int(start_label),
-                })
-            g = builder(arr, is_rgb, **kwargs)
-
-        preview = self._render_preview(g, node_radius=2, show_nodes=bool(show_nodes))
-        return (g, _pil_to_comfy_image(preview))
-
-
-class SegimageGraphView:
-    @classmethod
-    def INPUT_TYPES(s):
-        return {
-            "required": {
-                "graph": ("SEG_GRAPH",),
-            },
-            "optional": {
-                "node_radius": ("INT", {"default": 2, "min": 1, "max": 20, "tooltip": "Radius size for drawing nodes in the preview."}),
-                "show_nodes": ("BOOLEAN", {"default": True, "tooltip": "Whether to display nodes in the graph preview."}),
-            },
-        }
-
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("preview",)
-    FUNCTION = "run"
-    CATEGORY = "SegImage"
-
-    def run(self, graph: Any, node_radius: int = 2, show_nodes: bool = True) -> Tuple[Dict[str, Any]]:
-        try:
-            img = SegimageGraphBuilder()._render_preview(graph, node_radius=int(node_radius), show_nodes=bool(show_nodes))
-        except Exception:
+            img = SegimageGraphView._render_preview(graph, node_radius=int(node_radius), show_nodes=bool(show_nodes), edge_width_max=int(edge_width_max), edge_min=float(edge_min), labels=labels, palette=palette)
+        except Exception as e:
+            print(f"[SegImage] Error rendering graph preview: {str(e)}")
+            import traceback
+            traceback.print_exc()
             img = Image.new("RGB", (1, 1), (0, 0, 0))
         return (_pil_to_comfy_image(img),)
 
@@ -754,18 +554,17 @@ class SegimageHedonicCommunities:
         return {
             "required": {
                 "graph": ("SEG_GRAPH",),
-                "K": ("INT", {"default": 2, "min": 1, "max": 64, "tooltip": "Maximum number of communities to detect."}),
+                "max_communities": ("INT", {"default": 2, "min": 1, "max": 64, "tooltip": "Maximum number of communities to detect."}),
                 "resolution": ("FLOAT", {"default": 1.0, "min": 0.01, "max": 10.0, "tooltip": "Resolution parameter controlling community size (higher values lead to smaller communities)."}),
-                "palette": (("bw", "rainbow"), {"default": "bw", "tooltip": "Color palette for the community preview."}),
             },
         }
 
-    RETURN_TYPES = ("SEG_GRAPH", "IMAGE")
-    RETURN_NAMES = ("graph", "preview")
+    RETURN_TYPES = ("SEG_GRAPH", "COMMUNITY_LABELS")
+    RETURN_NAMES = ("graph", "labels")
     FUNCTION = "run"
     CATEGORY = "SegImage"
 
-    def run(self, graph: Any, K: int = 2, resolution: float = 1.0, palette: str = "bw") -> Tuple[Any, Dict[str, Any]]:
+    def run(self, graph: Any, max_communities: int = 2, resolution: float = 1.0) -> Tuple[Any, np.ndarray]:
         from igraph import Graph
 
         if not isinstance(graph, Graph):
@@ -777,14 +576,14 @@ class SegimageHedonicCommunities:
 
             game = Game(graph)
             attempt_kwargs: List[Dict[str, Any]] = []
-            base_kwargs = {"resolution": float(resolution), "max_communities": int(max(1, K))}
+            base_kwargs = {"resolution": float(resolution), "max_communities": int(max(1, max_communities))}
             try:
                 edge_weights = graph.es["weight"]
                 attempt_kwargs.append({**base_kwargs, "edge_weights": edge_weights})
             except Exception:
                 pass
             attempt_kwargs.append(dict(base_kwargs))
-            attempt_kwargs.append({"max_communities": int(max(1, K))})
+            attempt_kwargs.append({"max_communities": int(max(1, max_communities))})
             attempt_kwargs.append({})
             part = None
             for kw in attempt_kwargs:
@@ -810,25 +609,409 @@ class SegimageHedonicCommunities:
                 membership = list(map(int, part.membership))
 
         graph.vs["community"] = membership
-        img = SegimageGraphBuilder()._render_preview(graph, node_radius=3, show_nodes=True)
-        return (graph, _pil_to_comfy_image(img))
+        labels = np.array(membership, dtype=np.int32)
+        return (graph, labels)
 
 
-
-class SegimageIdentity:
+class SegimageGridGraph:
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
-                "image": ("IMAGE", {"tooltip": "The input image to pass through unchanged."}),
+                "image": ("IMAGE",),
+            },
+            "optional": {
+                "segments": ("SLICO_LABELS", {"tooltip": "Connect SLICO labels for superpixel mode (overrides to superpixel automatically)."}),
+                "edge_filter": (("none", "lbp_eq", "lbp", "gray", "rgb"), {"default": "none", "tooltip": "Filter type for edges."}),
+                "edge_similarity": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "tooltip": "Similarity threshold for edge filtering."}),
             },
         }
 
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
+    RETURN_TYPES = ("SEG_GRAPH",)
+    RETURN_NAMES = ("graph",)
     FUNCTION = "run"
     CATEGORY = "SegImage"
 
-    def run(self, image: Any):
-        # Simply pass the image through unchanged
-        return (image,)
+    def run(
+        self,
+        image: Any,
+        segments: Optional[np.ndarray] = None,
+        edge_filter: str = "none",
+        edge_similarity: float = 0.0,
+    ) -> Tuple[Any, List[Any]]:
+        try:
+            arr, is_rgb = _image_to_array_and_flag(image)
+        except Exception:
+            from igraph import Graph
+            g = Graph(); g.add_vertices(1); g["width"] = 1; g["height"] = 1
+            preview = Image.new("RGB", (1, 1), (0, 0, 0))
+            return (g, _pil_to_comfy_image(preview))
+
+        import igraph
+        from segimage.graphs.grid import build_grid_pixel_graph
+
+        if segments is not None:
+            if arr.shape[:2] != segments.shape:
+                raise ValueError("Segments shape must match image height and width.")
+            node_mode = "superpixel"
+
+            from segimage.graphs.segments import ensure_rgb_uint8, compute_segment_means_and_centroids, compute_segment_adjacency_edges
+            image_u8 = ensure_rgb_uint8(arr, is_rgb)
+            mean_r, mean_g, mean_b, mean_gray, cx, cy = compute_segment_means_and_centroids(image_u8, segments)
+            edges = compute_segment_adjacency_edges(segments)
+            num_nodes = int(mean_r.size)
+
+            filter_kind: Optional[str] = None
+            if edge_filter is not None:
+                ef = edge_filter.strip().lower()
+                if ef in ("none", ""):
+                    filter_kind = None
+                elif ef in ("lbp_eq", "lbp", "gray", "rgb"):
+                    filter_kind = ef
+
+            lbp_node = None
+            if filter_kind in ("lbp_eq", "lbp"):
+                from segimage.utils import compute_lbp_float_from_rgb_uint8
+                lbp_float = compute_lbp_float_from_rgb_uint8(image_u8)
+                lbp_u8 = (lbp_float * 255.0 + 0.5).astype(np.uint8)
+                lbp_flat = lbp_u8.reshape(-1)
+                flat_ids = segments.reshape(-1)
+                lbp_node = np.zeros(num_nodes, dtype=np.uint8)
+                for nid in range(num_nodes):
+                    m = flat_ids == nid
+                    if not np.any(m):
+                        continue
+                    hist = np.bincount(lbp_flat[m], minlength=256)
+                    lbp_node[nid] = np.uint8(np.argmax(hist))
+
+            if edges.size > 0 and filter_kind is not None:
+                thr = 1.0 - float(edge_similarity)
+                if filter_kind == "lbp_eq":
+                    mask = lbp_node[edges[:, 0]] == lbp_node[edges[:, 1]]
+                    edges = edges[mask]
+                elif filter_kind == "lbp":
+                    d = np.abs(lbp_node[edges[:, 0]].astype(np.int16) - lbp_node[edges[:, 1]].astype(np.int16)).astype(np.float64) / 255.0
+                    edges = edges[d <= thr]
+                elif filter_kind == "gray":
+                    d = np.abs(mean_gray[edges[:, 0]].astype(np.int16) - mean_gray[edges[:, 1]].astype(np.int16)).astype(np.float64) / 255.0
+                    edges = edges[d <= thr]
+                elif filter_kind == "rgb":
+                    c1 = np.stack([mean_r, mean_g, mean_b], axis=-1).astype(np.int16)
+                    diff = c1[edges[:, 0]] - c1[edges[:, 1]]
+                    dist = np.sqrt((diff[:, 0].astype(np.float64) ** 2) + (diff[:, 1].astype(np.float64) ** 2) + (diff[:, 2].astype(np.float64) ** 2))
+                    max_d = 255.0 * np.sqrt(3.0)
+                    d = dist / max_d
+                    edges = edges[d <= thr]
+
+            h, w = segments.shape
+            g = igraph.Graph()
+            g.add_vertices(int(num_nodes))
+            g["width"] = int(w)
+            g["height"] = int(h)
+            g["node_mode"] = "superpixel"
+            g.vs["r"] = mean_r.astype(int).tolist()
+            g.vs["g"] = mean_g.astype(int).tolist()
+            g.vs["b"] = mean_b.astype(int).tolist()
+            g.vs["gray"] = mean_gray.astype(int).tolist()
+            g.vs["cx"] = cx.astype(float).tolist()
+            g.vs["cy"] = cy.astype(float).tolist()
+            if edges.size > 0:
+                g.add_edges(edges.tolist())
+
+        else:
+            node_mode = "pixel"
+            g = build_grid_pixel_graph(
+                arr,
+                is_rgb,
+                node_mode="pixel",
+                edge_filter=edge_filter,
+                edge_similarity=edge_similarity,
+            )
+
+        # Remove preview = SegimageGraphBuilder()._render_preview(g, node_radius=2, show_nodes=True)
+        return (g,)
+
+class SegimageAffinityGraph:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+            },
+            "optional": {
+                "segments": ("SLICO_LABELS",),
+                "radius": ("INT", {"default": 5, "min": 1, "max": 64}),
+                "sigma_I": ("FLOAT", {"default": 10.0, "min": 0.0001, "max": 255.0}),
+                "sigma_X": ("FLOAT", {"default": 8.0, "min": 0.0001, "max": 512.0}),
+            },
+        }
+
+    RETURN_TYPES = ("SEG_GRAPH",)
+    RETURN_NAMES = ("graph",)
+    FUNCTION = "run"
+    CATEGORY = "SegImage"
+
+    def run(
+        self,
+        image: Any,
+        segments: Optional[np.ndarray] = None,
+        radius: int = 5,
+        sigma_I: float = 10.0,
+        sigma_X: float = 8.0,
+    ) -> Tuple[Any, List[Any]]:
+        try:
+            arr, is_rgb = _image_to_array_and_flag(image)
+        except Exception:
+            from igraph import Graph
+            g = Graph(); g.add_vertices(1); g["width"] = 1; g["height"] = 1
+            preview = Image.new("RGB", (1, 1), (0, 0, 0))
+            return (g, _pil_to_comfy_image(preview))
+
+        import igraph
+        from segimage.graphs.affinity import build_affinity_pixel_graph
+
+        if segments is not None:
+            if arr.shape[:2] != segments.shape:
+                raise ValueError("Segments shape must match image height and width.")
+            node_mode = "superpixel"
+
+            from segimage.graphs.segments import ensure_rgb_uint8, compute_segment_means_and_centroids, compute_segment_adjacency_edges
+            image_u8 = ensure_rgb_uint8(arr, is_rgb)
+            mean_r, mean_g, mean_b, mean_gray, cx, cy = compute_segment_means_and_centroids(image_u8, segments)
+            edges = compute_segment_adjacency_edges(segments)
+            num_nodes = int(mean_r.size)
+
+            if is_rgb:
+                feats = np.stack([mean_r, mean_g, mean_b], axis=-1).astype(np.float64)
+            else:
+                feats = mean_gray.reshape(-1, 1).astype(np.float64)
+            coords = np.stack([cy, cx], axis=-1).astype(np.float64)
+
+            sigI = float(max(1e-12, sigma_I))
+            sigX = float(max(1e-12, sigma_X))
+            weights: List[float] = []
+            for u, v in edges:
+                df = feats[u] - feats[v]
+                dist_feature_sq = float(np.dot(df, df))
+                dc = coords[u] - coords[v]
+                dist_spatial = float(np.hypot(dc[0], dc[1]))
+                w_I = float(np.exp(-(dist_feature_sq) / (sigI * sigI)))
+                w_X = float(np.exp(-(dist_spatial * dist_spatial) / (sigX * sigX)))
+                weights.append(float(w_I * w_X))
+
+            h, w = segments.shape
+            g = igraph.Graph()
+            g.add_vertices(int(num_nodes))
+            g["width"] = int(w)
+            g["height"] = int(h)
+            g["node_mode"] = "superpixel"
+            g.vs["r"] = mean_r.astype(int).tolist()
+            g.vs["g"] = mean_g.astype(int).tolist()
+            g.vs["b"] = mean_b.astype(int).tolist()
+            g.vs["gray"] = mean_gray.astype(int).tolist()
+            g.vs["cx"] = cx.astype(float).tolist()
+            g.vs["cy"] = cy.astype(float).tolist()
+            if edges.size > 0:
+                g.add_edges(edges.tolist())
+                g.es["weight"] = weights
+
+        else:
+            node_mode = "pixel"
+            g = build_affinity_pixel_graph(
+                arr,
+                is_rgb,
+                node_mode="pixel",
+                radius=radius,
+                sigma_I=sigma_I,
+                sigma_X=sigma_X,
+            )
+
+        # Remove preview = SegimageGraphBuilder()._render_preview(g, node_radius=2, show_nodes=True)
+        return (g,)
+
+class SegimageProb4Graph:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+            },
+            "optional": {
+                "segments": ("SLICO_LABELS",),
+                "sigma_I": ("FLOAT", {"default": 10.0, "min": 0.0001, "max": 255.0}),
+            },
+        }
+
+    RETURN_TYPES = ("SEG_GRAPH",)
+    RETURN_NAMES = ("graph",)
+    FUNCTION = "run"
+    CATEGORY = "SegImage"
+
+    def run(
+        self,
+        image: Any,
+        segments: Optional[np.ndarray] = None,
+        sigma_I: float = 10.0,
+    ) -> Tuple[Any, List[Any]]:
+        try:
+            arr, is_rgb = _image_to_array_and_flag(image)
+        except Exception:
+            from igraph import Graph
+            g = Graph(); g.add_vertices(1); g["width"] = 1; g["height"] = 1
+            preview = Image.new("RGB", (1, 1), (0, 0, 0))
+            return (g, _pil_to_comfy_image(preview))
+
+        import igraph
+        from segimage.graphs.prob4 import build_prob4_pixel_graph
+
+        if segments is not None:
+            if arr.shape[:2] != segments.shape:
+                raise ValueError("Segments shape must match image height and width.")
+            node_mode = "superpixel"
+
+            from segimage.graphs.segments import ensure_rgb_uint8, compute_segment_means_and_centroids, compute_segment_adjacency_edges
+            image_u8 = ensure_rgb_uint8(arr, is_rgb)
+            mean_r, mean_g, mean_b, mean_gray, cx, cy = compute_segment_means_and_centroids(image_u8, segments)
+            edges = compute_segment_adjacency_edges(segments)
+            num_nodes = int(mean_r.size)
+
+            sigI = float(max(1e-12, sigma_I))
+            weights: List[float] = []
+            for u, v in edges:
+                d = abs(int(mean_gray[u]) - int(mean_gray[v]))
+                wgt = float(np.exp(-(d * d) / (sigI * sigI)))
+                weights.append(wgt)
+
+            h, w = segments.shape
+            g = igraph.Graph()
+            g.add_vertices(int(num_nodes))
+            g["width"] = int(w)
+            g["height"] = int(h)
+            g["node_mode"] = "superpixel"
+            g.vs["r"] = mean_r.astype(int).tolist()
+            g.vs["g"] = mean_g.astype(int).tolist()
+            g.vs["b"] = mean_b.astype(int).tolist()
+            g.vs["gray"] = mean_gray.astype(int).tolist()
+            g.vs["cx"] = cx.astype(float).tolist()
+            g.vs["cy"] = cy.astype(float).tolist()
+            if edges.size > 0:
+                g.add_edges(edges.tolist())
+                g.es["weight"] = weights
+
+        else:
+            node_mode = "pixel"
+            g = build_prob4_pixel_graph(
+                arr,
+                is_rgb,
+                node_mode="pixel",
+                sigma_I=sigma_I,
+            )
+
+        # Remove preview = SegimageGraphBuilder()._render_preview(g, node_radius=2, show_nodes=True)
+        return (g,)
+
+class SegimageContrast4Graph:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+            },
+            "optional": {
+                "segments": ("SLICO_LABELS",),
+                "alpha": ("FLOAT", {"default": 10.0, "min": 0.0, "max": 100.0}),
+            },
+        }
+
+    RETURN_TYPES = ("SEG_GRAPH",)
+    RETURN_NAMES = ("graph",)
+    FUNCTION = "run"
+    CATEGORY = "SegImage"
+
+    def run(
+        self,
+        image: Any,
+        segments: Optional[np.ndarray] = None,
+        alpha: float = 10.0,
+    ) -> Tuple[Any, List[Any]]:
+        try:
+            arr, is_rgb = _image_to_array_and_flag(image)
+        except Exception:
+            from igraph import Graph
+            g = Graph(); g.add_vertices(1); g["width"] = 1; g["height"] = 1
+            preview = Image.new("RGB", (1, 1), (0, 0, 0))
+            return (g, _pil_to_comfy_image(preview))
+
+        import igraph
+        from segimage.graphs.contrast4 import build_contrast4_pixel_graph
+
+        if segments is not None:
+            if arr.shape[:2] != segments.shape:
+                raise ValueError("Segments shape must match image height and width.")
+            node_mode = "superpixel"
+
+            from segimage.graphs.segments import ensure_rgb_uint8, compute_segment_means_and_centroids, compute_segment_adjacency_edges
+            image_u8 = ensure_rgb_uint8(arr, is_rgb)
+            mean_r, mean_g, mean_b, mean_gray, cx, cy = compute_segment_means_and_centroids(image_u8, segments)
+            edges = compute_segment_adjacency_edges(segments)
+            num_nodes = int(mean_r.size)
+
+            h_s, w_s = segments.shape
+            feats = np.column_stack([
+                mean_gray.astype(np.float64) / 255.0,
+                cy.astype(np.float64) / max(1.0, float(h_s)),
+                cx.astype(np.float64) / max(1.0, float(w_s)),
+            ])
+            a = float(max(0.0, alpha))
+            weights = []
+            dim_scale = float(np.sqrt(max(1, feats.shape[1])))
+            for u, v in edges:
+                d = float(np.linalg.norm(feats[u] - feats[v]) / dim_scale)
+                weights.append(float(np.exp(-a * d)))
+
+            g = igraph.Graph()
+            g.add_vertices(int(num_nodes))
+            g["width"] = int(w_s)
+            g["height"] = int(h_s)
+            g["node_mode"] = "superpixel"
+            g.vs["r"] = mean_r.astype(int).tolist()
+            g.vs["g"] = mean_g.astype(int).tolist()
+            g.vs["b"] = mean_b.astype(int).tolist()
+            g.vs["gray"] = mean_gray.astype(int).tolist()
+            g.vs["cx"] = cx.astype(float).tolist()
+            g.vs["cy"] = cy.astype(float).tolist()
+            if edges.size > 0:
+                g.add_edges(edges.tolist())
+                g.es["weight"] = weights
+
+        else:
+            node_mode = "pixel"
+            g = build_contrast4_pixel_graph(
+                arr,
+                is_rgb,
+                node_mode="pixel",
+                alpha=alpha,
+            )
+
+        # Remove preview = SegimageGraphBuilder()._render_preview(g, node_radius=2, show_nodes=True)
+        return (g,)
+
+NODE_CLASS_MAPPINGS = {
+    "SegimageSLICO": SegimageSLICO,
+    "SegimageGraphView": SegimageGraphView,
+    "SegimageHedonicCommunities": SegimageHedonicCommunities,
+    "SegimageGridGraph": SegimageGridGraph,
+    "SegimageAffinityGraph": SegimageAffinityGraph,
+    "SegimageProb4Graph": SegimageProb4Graph,
+    "SegimageContrast4Graph": SegimageContrast4Graph,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "SegimageSLICO": "SegImage SLICO Superpixels",
+    "SegimageGraphView": "SegImage Graph Preview",
+    "SegimageHedonicCommunities": "SegImage Hedonic Communities",
+    "SegimageGridGraph": "SegImage Grid Graph",
+    "SegimageAffinityGraph": "SegImage Affinity Graph",
+    "SegimageProb4Graph": "SegImage Prob4 Graph",
+    "SegimageContrast4Graph": "SegImage Contrast4 Graph",
+}
